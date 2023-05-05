@@ -190,8 +190,8 @@ if (graph && controlGraph){
         </div>
         ) :
         <div style={{cursor: (fetching ? 'wait' : 'default')}}>
-         <Box sx={{ width: 300, zIndex: 1000,position:'absolute',backgroundColor:'grey',right:10,padding:1,
-         top:10,
+         <Box sx={{ width: 300, zIndex: 1000,position:'absolute',backgroundColor:'grey',right:15,padding:1,
+         top:15,
          display:"flex",
          justifyContent:"center",
          flexDirection:'column',
