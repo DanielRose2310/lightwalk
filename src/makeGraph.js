@@ -15,6 +15,7 @@ const makeGraph=(nodeFeatures,edgeFeatures,weightParam)=>{
     
      G.addEdge(f.properties['source'].toString(),f.properties['target'].toString(),f.properties[weightParam])
     })
+
     return G
 }
 export default makeGraph

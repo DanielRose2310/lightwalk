@@ -4,27 +4,19 @@ import borders from './borders.json'
 import 'leaflet/dist/leaflet.css';
 import getPath from './getPath.js'
 import ReactLoading from "react-loading";
-
+import Slider from '@mui/material/Slider';
+import Typography from '@mui/material/Typography';
+import Box from '@mui/material/Box';
 import { useState,useEffect,useRef } from 'react';
 import { MapContainer, TileLayer, useMap,LineString,  Polyline,useMapEvents,Marker,Polygon,Popup,Tooltip
 } from 'react-leaflet'
 import L,{Icon} from 'leaflet';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import nearestPoint from '@turf/nearest-point'
 import {point, round} from '@turf/turf'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import ReactDOMServer from 'react-dom/server';
 import makeGraph from './makeGraph.js'
-function getMiddle(arr){
-  return arr.splice(Math.floor((arr.length-1) / 2), 1)[0]
-}
 
-
-
-const edgeFeatures = edgesData['features'];
-const nodeFeatures = nodesData['features'];
+let edgeFeatures = edgesData['features'];
+let nodeFeatures = nodesData['features'];
 
 const borderGeoms = borders.features[0].geometry.coordinates[0].map(el=>[el[1],el[0]])
 
@@ -33,24 +25,55 @@ const App=()=>{
   const [graph,setGraph] = useState(null)
   const [controlGraph,setControlGraph] = useState(null)
   const [map, setMap] = useState(null);
+  const [exertionCoef,setExertionCoef] = useState(0.5)
 const [loading,setLoading] = useState(true)
   const [originNode, setOriginNode] = useState(null);
   const [targetNode, setTargetNode] = useState(null);
   const [pathGeoms, setPathGeoms] = useState([])
   const [otherPathGeoms, setOtherPathGeoms] = useState([])
-
+  const [edgesWithCoef,setEdgesWithCoef] = useState(null)
   const [coolLength, setCoolLength] = useState(0)
   // const [coolExertion, setCoolExertion] = useState(0)
-
+  const [selectedSliderVal,setSelectedSliderVal] = useState(null)
   const [otherLength, setOtherLength] = useState(0)
+  const [fetching,setFetching] = useState(false)
   const featureGroupRef = useRef();
-  const timeoutOffset = 40
+  //const timeoutOffset = 40
+  const timeoutOffset = 0
 
 useEffect(()=>{
-setControlGraph(makeGraph(nodeFeatures,edgeFeatures,'length'))
-setGraph(makeGraph(nodeFeatures,edgeFeatures,'elev_diff'))
+if (!edgeFeatures){return}
+edgeFeatures = edgeFeatures.map(edge=> 
+  {
 
-},[])
+
+  return {...edge,properties:
+  {...edge.properties, exertion:
+  edge.properties.elev_diff>0 ? 
+    edge.properties['length']
+    + 
+  (edge.properties.elev_diff<1 ? 1 : (
+    edge.properties['length'] *
+    (edge.properties.elev_diff
+     * exertionCoef)
+     
+     * (edge.properties.highway.includes('steps') ? 0.5 : 1)
+     ))
+  : edge.properties['length']
+
+  
+}}
+}
+  )
+  setEdgesWithCoef(edgeFeatures)
+},[exertionCoef,edgesData])
+
+useEffect(()=>{
+  if (!edgesWithCoef) return
+  setFetching(true)
+setControlGraph(makeGraph(nodeFeatures,edgeFeatures,'length'))
+setGraph(makeGraph(nodeFeatures,edgesWithCoef,'exertion'))
+},[edgesWithCoef])
 
 useEffect(()=>{
 if (graph && controlGraph){
@@ -60,38 +83,36 @@ if (graph && controlGraph){
 },[graph,controlGraph])
 
   useEffect(()=>{
-    if (!originNode | !targetNode)
-    {setPathGeoms([])
+      setPathGeoms([])
       setOtherPathGeoms([])
-    }
-  
     if (originNode && targetNode)
     {
-      let pathData = getPath(graph,String(originNode.properties.id),String(targetNode.properties.id))
+    setFetching(true)
+      let pathData = getPath(graph,      
+        nodeFeatures,
+        edgesWithCoef,
+        String(originNode.properties.id),
+      String(targetNode.properties.id)
+      )
       let path = pathData[0]
       let coolPathLength = pathData[1]
-      path.forEach((pathSegment,i)=>{
-       let timeOut = setTimeout(() => {
-          setPathGeoms((pathGeoms) => [...pathGeoms, pathSegment])
-       }, timeoutOffset*i);
+          setPathGeoms(path)
        setCoolLength(coolPathLength)
-      return () => {clearTimeout(timeOut)};
-      })
       
-
-       pathData = getPath(controlGraph,String(originNode.properties.id),String(targetNode.properties.id))
+       pathData = getPath(controlGraph,      
+        nodeFeatures,
+        edgesWithCoef,
+        String(originNode.properties.id),
+      String(targetNode.properties.id)
+      )
        path = pathData[0]
        let otherLength = pathData[1]
-      path.forEach((pathSegment,i)=>{
-       let timeOut = setTimeout(() => {
-          setOtherPathGeoms((pathGeoms) => [...pathGeoms, pathSegment])
-       }, timeoutOffset*i);
+          setOtherPathGeoms(path)
        setOtherLength(otherLength)
-      return () => {clearTimeout(timeOut)};
-      })
-
   }
-  },[originNode,targetNode])
+  setFetching(false)
+
+  },[originNode,targetNode,graph,edgesWithCoef,controlGraph])
 
   const customIcon = new L.DivIcon({
     html:  "https://www.svgrepo.com/show/500813/coffee.svg",
@@ -168,13 +189,50 @@ if (graph && controlGraph){
         />
         </div>
         ) :
-  <MapContainer center={[32.794044,  34.989571]} zoom={15} ref={featureGroupRef} 
-  // bounds={L.latLngBounds(borderGeoms)}
-  // maxBounds={L.latLngBounds(borderGeoms)}
-  // minZoom={14}
+        <div style={{cursor: (fetching ? 'wait' : 'default')}}>
+         <Box sx={{ width: 300, zIndex: 1000,position:'absolute',backgroundColor:'grey',right:10,padding:1,
+         top:10,
+         display:"flex",
+         justifyContent:"center",
+         flexDirection:'column',
+         alignItems:"center",
+         opacity:0.8,
+        borderRadius:3,pointerEvents:'all'
+
+      }}
+      center
+      >
+        <Typography variant="h6" >INCLINE COEFFICIENT</Typography>
+<Slider
+
+  aria-label="Beta"
+  //value={exertionCoef}
+  defaultValue={0.5}
+  valueLabelDisplay="auto"
+  step={0.1}
+  marks
+  sx={{cursor: (fetching ? 'wait' : 'pointer')}}
+  min={0}
+  max={1}
+  onChange={
+    
+    (e)=>{      
+      setSelectedSliderVal(e.target.value)
+    }
+    }
+  onChangeCommitted={
+    (e)=>{
+      setExertionCoef(selectedSliderVal)
+    }
+  }
+/>
+</Box>
+  <MapContainer center={[32.794044,  34.989571]} zoom={13} ref={featureGroupRef} 
+  bounds={L.latLngBounds(borderGeoms)}
+  maxBounds={L.latLngBounds(borderGeoms)}
+  minZoom={12}
   >
-
-
+     
   <TileLayer
     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -206,10 +264,7 @@ if (graph && controlGraph){
         null}
      {otherPathGeoms.length ?
      <>
-         {/* <Polyline key={'path_short'} positions={[
-            otherPathGeoms
-        ]} 
-        color={'red'} /> */}
+
         {otherPathGeoms.map((geom,i)=>
           <Polyline key={'path_short_'+String(i)} positions={
           
@@ -225,7 +280,10 @@ if (graph && controlGraph){
         :
         null}
         <Markers/>
+      
 </MapContainer>
+
+</div>
 }
 </>
 }
